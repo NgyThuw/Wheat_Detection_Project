@@ -1,223 +1,102 @@
 import os
-import random
 import shutil
+import random
+from tqdm import tqdm
+import sys
 
 # =========================================================
-# BASE PATH
+# CONFIG IMPORT
 # =========================================================
-
-BASE_DIR = os.path.abspath(
+ROOT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
+sys.path.append(ROOT_DIR)
 
-PROCESSED_DIR = os.path.join(BASE_DIR, "dataset", "processed")
-SPLIT_DIR = os.path.join(BASE_DIR, "dataset", "split")
+from config import *
 
-# =========================================================
-# SPLIT RATIO
-# =========================================================
+VALID_EXT = (".jpg", ".jpeg", ".png", ".bmp")
 
-TRAIN_RATIO = 0.7
-VAL_RATIO = 0.2
-TEST_RATIO = 0.1
+random.seed(SEED)
 
 # =========================================================
-# RANDOM SEED
+# RESET SPLIT FOLDER
 # =========================================================
-
-random.seed(42)
-
-# =========================================================
-# DATASET TYPES
-# =========================================================
-
-DATASET_TYPES = [
-    "cnn_224",
-    "transformer_384"
-]
-
-# =========================================================
-# CREATE SPLIT FOLDERS
-# =========================================================
-
-for dataset_type in DATASET_TYPES:
-
-    for split_name in ["train", "val", "test"]:
-
-        split_path = os.path.join(
-            SPLIT_DIR,
-            dataset_type,
-            split_name
-        )
-
-        os.makedirs(split_path, exist_ok=True)
-
-# =========================================================
-# START SPLITTING
-# =========================================================
-
 print("=" * 60)
-print("START SPLITTING DATASET")
+print("SPLIT PIPELINE")
 print("=" * 60)
 
-for dataset_type in DATASET_TYPES:
+if os.path.exists(PROCESSED_DIR):
+    shutil.rmtree(PROCESSED_DIR)
 
-    print(f"\nProcessing: {dataset_type}")
-
-    dataset_path = os.path.join(
-        PROCESSED_DIR,
-        dataset_type
-    )
-
-    # =====================================================
-    # LOOP CLASSES
-    # =====================================================
-
-    for class_name in os.listdir(dataset_path):
-
-        class_path = os.path.join(
-            dataset_path,
-            class_name
-        )
-
-        if not os.path.isdir(class_path):
-            continue
-
-        print(f"  -> Class: {class_name}")
-
-        # =================================================
-        # GET IMAGE LIST
-        # =================================================
-
-        image_files = []
-
-        for file_name in os.listdir(class_path):
-
-            file_path = os.path.join(
-                class_path,
-                file_name
-            )
-
-            if os.path.isfile(file_path):
-                image_files.append(file_name)
-
-        # shuffle
-        random.shuffle(image_files)
-
-        total_images = len(image_files)
-
-        # =================================================
-        # SPLIT INDEX
-        # =================================================
-
-        train_end = int(total_images * TRAIN_RATIO)
-        val_end = train_end + int(total_images * VAL_RATIO)
-
-        train_files = image_files[:train_end]
-        val_files = image_files[train_end:val_end]
-        test_files = image_files[val_end:]
-
-        # =================================================
-        # CREATE CLASS FOLDERS
-        # =================================================
-
-        train_class_dir = os.path.join(
-            SPLIT_DIR,
-            dataset_type,
-            "train",
-            class_name
-        )
-
-        val_class_dir = os.path.join(
-            SPLIT_DIR,
-            dataset_type,
-            "val",
-            class_name
-        )
-
-        test_class_dir = os.path.join(
-            SPLIT_DIR,
-            dataset_type,
-            "test",
-            class_name
-        )
-
-        os.makedirs(train_class_dir, exist_ok=True)
-        os.makedirs(val_class_dir, exist_ok=True)
-        os.makedirs(test_class_dir, exist_ok=True)
-
-        # =================================================
-        # COPY TRAIN
-        # =================================================
-
-        for file_name in train_files:
-
-            src_path = os.path.join(
-                class_path,
-                file_name
-            )
-
-            dst_path = os.path.join(
-                train_class_dir,
-                file_name
-            )
-
-            shutil.copy2(src_path, dst_path)
-
-        # =================================================
-        # COPY VAL
-        # =================================================
-
-        for file_name in val_files:
-
-            src_path = os.path.join(
-                class_path,
-                file_name
-            )
-
-            dst_path = os.path.join(
-                val_class_dir,
-                file_name
-            )
-
-            shutil.copy2(src_path, dst_path)
-
-        # =================================================
-        # COPY TEST
-        # =================================================
-
-        for file_name in test_files:
-
-            src_path = os.path.join(
-                class_path,
-                file_name
-            )
-
-            dst_path = os.path.join(
-                test_class_dir,
-                file_name
-            )
-
-            shutil.copy2(src_path, dst_path)
-
-        # =================================================
-        # SUMMARY
-        # =================================================
-
-        print(
-            f"     Total: {total_images} | "
-            f"Train: {len(train_files)} | "
-            f"Val: {len(val_files)} | "
-            f"Test: {len(test_files)}"
-        )
+for s in SPLITS:
+    os.makedirs(os.path.join(PROCESSED_DIR, s), exist_ok=True)
 
 # =========================================================
-# FINISH
+# LOAD DATA
 # =========================================================
+data = []
 
+for cls in os.listdir(PROCESSED_DIR):
+
+    class_path = os.path.join(PROCESSED_DIR, cls)
+
+    if not os.path.isdir(class_path):
+        continue
+
+    for f in os.listdir(class_path):
+
+        if f.lower().endswith(VALID_EXT):
+
+            data.append((os.path.join(class_path, f), cls))
+
+print(f"[INFO] Total images: {len(data)}")
+
+random.shuffle(data)
+
+# =========================================================
+# SPLIT
+# =========================================================
+n = len(data)
+
+train_end = int(n * TRAIN_RATIO)
+val_end = train_end + int(n * VAL_RATIO)
+
+train = data[:train_end]
+val = data[train_end:val_end]
+test = data[val_end:]
+
+# =========================================================
+# COPY FUNCTION
+# =========================================================
+def copy(dataset, split):
+
+    count = 0
+
+    for path, cls in tqdm(dataset, desc=split):
+
+        dst_dir = os.path.join(PROCESSED_DIR, split, cls)
+        os.makedirs(dst_dir, exist_ok=True)
+
+        shutil.copy2(path, os.path.join(dst_dir, os.path.basename(path)))
+        count += 1
+
+    return count
+
+# =========================================================
+# RUN
+# =========================================================
+train_c = copy(train, "train")
+val_c   = copy(val, "val")
+test_c  = copy(test, "test")
+
+# =========================================================
+# SUMMARY
+# =========================================================
 print("\n" + "=" * 60)
-print("DATASET SPLITTING COMPLETED")
+print("DONE")
 print("=" * 60)
 
-print("\nSaved to:")
-print(SPLIT_DIR)
+print(f"Train: {train_c}")
+print(f"Val  : {val_c}")
+print(f"Test : {test_c}")
+print(f"Total: {train_c + val_c + test_c}")

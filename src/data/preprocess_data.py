@@ -1,102 +1,93 @@
 import os
 import cv2
+import shutil
+from tqdm import tqdm
+import sys
 
 # =========================================================
-# BASE PATH
+# CONFIG IMPORT
 # =========================================================
-
-BASE_DIR = os.path.abspath(
+ROOT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
+sys.path.append(ROOT_DIR)
 
-CLEANED_DIR = os.path.join(BASE_DIR, "dataset", "cleaned")
-PROCESSED_DIR = os.path.join(BASE_DIR, "dataset", "processed")
+from config import *
 
-# =========================================================
-# OUTPUT SIZE
-# =========================================================
-
-CNN_SIZE = (224, 224)
-TRANSFORMER_SIZE = (384, 384)
+VALID_EXT = (".jpg", ".jpeg", ".png", ".bmp")
 
 # =========================================================
-# CREATE OUTPUT FOLDERS
+# RESET PROCESSED FOLDER
 # =========================================================
-
-CNN_OUTPUT = os.path.join(PROCESSED_DIR, "cnn_224")
-TRANSFORMER_OUTPUT = os.path.join(PROCESSED_DIR, "transformer_384")
-
-os.makedirs(CNN_OUTPUT, exist_ok=True)
-os.makedirs(TRANSFORMER_OUTPUT, exist_ok=True)
-
-# =========================================================
-# PROCESS DATASET
-# =========================================================
-
 print("=" * 60)
-print("START PREPROCESSING")
+print("PREPROCESS PIPELINE")
 print("=" * 60)
 
-for class_name in os.listdir(CLEANED_DIR):
+if os.path.exists(PROCESSED_DIR):
+    shutil.rmtree(PROCESSED_DIR)
 
-    class_path = os.path.join(CLEANED_DIR, class_name)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
+
+# =========================================================
+# PROCESS
+# =========================================================
+stats = {}
+
+for class_name in os.listdir(BALANCED_DIR):
+
+    class_path = os.path.join(BALANCED_DIR, class_name)
 
     if not os.path.isdir(class_path):
         continue
 
-    print(f"\nProcessing class: {class_name}")
+    images = [
+        f for f in os.listdir(class_path)
+        if f.lower().endswith(VALID_EXT)
+    ]
 
-    # tạo class folder
-    cnn_class_dir = os.path.join(CNN_OUTPUT, class_name)
-    transformer_class_dir = os.path.join(TRANSFORMER_OUTPUT, class_name)
+    stats[class_name] = {"ok": 0, "skip": 0}
 
-    os.makedirs(cnn_class_dir, exist_ok=True)
-    os.makedirs(transformer_class_dir, exist_ok=True)
+    save_dir = os.path.join(PROCESSED_DIR, class_name)
+    os.makedirs(save_dir, exist_ok=True)
 
-    for file_name in os.listdir(class_path):
+    for f in tqdm(images, desc=f"Preprocess {class_name}"):
 
-        file_path = os.path.join(class_path, file_name)
+        path = os.path.join(class_path, f)
 
-        image = cv2.imread(file_path)
+        try:
+            img = cv2.imread(path)
 
-        if image is None:
-            continue
+            if img is None:
+                stats[class_name]["skip"] += 1
+                continue
 
-        # =================================================
-        # CNN IMAGE
-        # =================================================
+            h, w = img.shape[:2]
 
-        cnn_image = cv2.resize(image, CNN_SIZE)
+            if h < 50 or w < 50:
+                stats[class_name]["skip"] += 1
+                continue
 
-        cnn_output_path = os.path.join(
-            cnn_class_dir,
-            file_name
-        )
+            # save cleaned image
+            dst = os.path.join(save_dir, f)
+            shutil.copy2(path, dst)
 
-        cv2.imwrite(cnn_output_path, cnn_image)
+            stats[class_name]["ok"] += 1
 
-        # =================================================
-        # TRANSFORMER IMAGE
-        # =================================================
+        except:
+            stats[class_name]["skip"] += 1
 
-        transformer_image = cv2.resize(
-            image,
-            TRANSFORMER_SIZE
-        )
-
-        transformer_output_path = os.path.join(
-            transformer_class_dir,
-            file_name
-        )
-
-        cv2.imwrite(
-            transformer_output_path,
-            transformer_image
-        )
-
-print("\nPREPROCESSING COMPLETED")
+# =========================================================
+# SUMMARY
+# =========================================================
+print("\n" + "=" * 60)
+print("PREPROCESS DONE")
 print("=" * 60)
 
-print("\nSaved to:")
-print(CNN_OUTPUT)
-print(TRANSFORMER_OUTPUT)
+total = 0
+
+for cls, st in stats.items():
+    print(f"{cls}: OK={st['ok']} | SKIP={st['skip']}")
+    total += st["ok"]
+
+print(f"\nTOTAL CLEAN IMAGES: {total}")
+print(f"SAVED TO: {PROCESSED_DIR}")
